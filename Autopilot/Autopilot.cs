@@ -15,6 +15,7 @@ namespace KspAutopilot
 
 
 		private float kp, ki, kd; // correcteur proportionnel, intégrateur, dérivateur
+		private string skp, ski, skd; // pour l'interface graphique
 		private Vector3 pError, iError, dError; // erreur précédente, intégrale de l'erreur, dérivée de l'erreur
 		private Attitude attitude;
 		private Rect windowPosition;
@@ -24,9 +25,9 @@ namespace KspAutopilot
 		{
 			base.OnStart (state);
 
-			this.kp = 12;
-			this.ki = 10;
-			this.kd = 20;
+			this.SetKp(12);
+			this.SetKi(10);
+			this.SetKd(20);
 			this.SetAttitude (Attitude.None);
 			this.autopilot = false;
 
@@ -83,59 +84,80 @@ namespace KspAutopilot
 			this.ResetPID ();
 		}
 
+		private void SetKp (float kp)
+		{
+			this.kp = kp;
+			this.skp = Convert.ToString (kp);
+			this.ResetPID ();
+		}
+
+		private void SetKi (float ki)
+		{
+			this.ki = ki;
+			this.ski = Convert.ToString (ki);
+			this.ResetPID ();
+		}
+
+		private void SetKd (float kd)
+		{
+			this.kd = kd;
+			this.skd = Convert.ToString (kd);
+			this.ResetPID ();
+		}
+
 		private void DrawGUI ()
 		{
 			GUI.skin = HighLogic.Skin;
-			this.windowPosition = GUILayout.Window (1, this.windowPosition, AttitudeAutopilotGUI, "Attitude autopilot", GUILayout.MinWidth (100));
+			this.windowPosition = GUILayout.Window (1, this.windowPosition, AttitudeAutopilotGUI, "Attitude autopilot", GUILayout.ExpandWidth (true), GUILayout.MinWidth (200));
 		}
 
 		private void AttitudeAutopilotGUI (int windowID)
 		{
-			GUIStyle mySty = new GUIStyle (GUI.skin.button);
-			mySty.normal.textColor = mySty.focused.textColor = Color.white;
-			mySty.hover.textColor = mySty.active.textColor = Color.yellow;
-			mySty.onNormal.textColor = mySty.onFocused.textColor = mySty.onHover.textColor = mySty.onActive.textColor = Color.green;
-			mySty.padding = new RectOffset (8, 8, 8, 8);
 
 			GUILayout.BeginVertical ();
-			/*
-			GUILayout.Label (Convert.ToString (this.kp * this.error.x), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.kp * this.error.y), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.kp * this.error.z), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.ki * this.integralError.x), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.ki * this.integralError.y), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.ki * this.integralError.z), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.kd * this.derivativeError.x), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.kd * this.derivativeError.y), mySty, GUILayout.ExpandWidth (true));
-			GUILayout.Label (Convert.ToString (this.kd * this.derivativeError.z), mySty, GUILayout.ExpandWidth (true));
 
-*/
-			if (GUILayout.Toggle (this.attitude == Attitude.None, "None", mySty, GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.None, "None",GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.None);
 			}
-			if (GUILayout.Toggle (this.attitude == Attitude.Prograde, "Prograde", mySty, GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.Prograde, "Prograde", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Prograde);
 			}
-			if (GUILayout.Toggle (this.attitude == Attitude.Retrograde, "Retrograde", mySty, GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.Retrograde, "Retrograde", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Retrograde);
 			}
-			if (GUILayout.Toggle (this.attitude == Attitude.Nplus, "N+", mySty, GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.Nplus, "N+", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Nplus);
 			}
-			if (GUILayout.Toggle (this.attitude == Attitude.Nminus, "N-", mySty, GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.Nminus, "N-", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Nminus);
 			}
 
+			float temp = 0;
 			GUILayout.BeginHorizontal ();
-			this.kp = float.Parse (GUILayout.TextField (Convert.ToString (this.kp), mySty, GUILayout.ExpandWidth (true)));
-			this.ki = float.Parse (GUILayout.TextField (Convert.ToString (this.ki), mySty, GUILayout.ExpandWidth (true)));
-			this.kd = float.Parse (GUILayout.TextField (Convert.ToString (this.kd), mySty, GUILayout.ExpandWidth (true)));
+			GUILayout.Label ("kp", GUILayout.ExpandWidth (true));
+			this.skp = GUILayout.TextField (this.skp, GUILayout.ExpandWidth (true));
+			if (float.TryParse (this.skp, out temp) && temp != this.kp) this.SetKp (temp);
 			GUILayout.EndHorizontal ();
 
 			GUILayout.BeginHorizontal ();
-			GUILayout.Label ("Status", mySty, GUILayout.ExpandWidth (true));
-			this.autopilot = GUILayout.Toggle (this.autopilot, this.autopilot ? "Enabled" : "Disabled", mySty, GUILayout.ExpandWidth (true));
+			GUILayout.Label ("ki", GUILayout.ExpandWidth (true));
+			this.ski = GUILayout.TextField (this.ski, GUILayout.ExpandWidth (true));
+			if (float.TryParse (this.ski, out temp) && temp != this.ki) this.SetKi (temp);
 			GUILayout.EndHorizontal ();
+
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("kd", GUILayout.ExpandWidth (true));
+			this.skd = GUILayout.TextField (this.skd, GUILayout.ExpandWidth (true));
+			if (float.TryParse (this.skd, out temp) && temp != this.kd) this.SetKd (temp);
+			GUILayout.EndHorizontal ();
+
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("Status", GUILayout.ExpandWidth (true));
+			this.autopilot = GUILayout.Toggle (this.autopilot, this.autopilot ? "Enabled" : "Disabled", GUILayout.ExpandWidth (true));
+			GUILayout.EndHorizontal ();
+
+			if (GUILayout.Button ("Close", GUILayout.ExpandWidth (true))) RenderingManager.RemoveFromPostDrawQueue (3, new Callback (DrawGUI));
+
 			GUILayout.EndVertical ();
 
 			GUI.DragWindow (new Rect (0, 0, 10000, 20));
