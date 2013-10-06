@@ -10,7 +10,10 @@ namespace KspAutopilot
 			Prograde,
 			Retrograde,
 			Nplus,
-			Nminus
+			Nminus,
+			Up,
+			Down,
+			UserDefined
 		};
 
 
@@ -20,6 +23,8 @@ namespace KspAutopilot
 		private Attitude attitude;
 		private Rect windowPosition;
 		private Boolean autopilot;
+		private float pitch, yaw;
+		private string spitch, syaw;
 
 		public override void OnStart (StartState state)
 		{
@@ -28,6 +33,8 @@ namespace KspAutopilot
 			this.SetKp(12);
 			this.SetKi(10);
 			this.SetKd(20);
+			this.SetPitch (0);
+			this.SetYaw (0);
 			this.SetAttitude (Attitude.None);
 			this.autopilot = false;
 
@@ -57,7 +64,7 @@ namespace KspAutopilot
 				heading = this.vessel.obt_velocity.normalized;
 				break;
 			case Attitude.Retrograde:
-				heading = - this.vessel.obt_velocity.normalized;
+				heading = -this.vessel.obt_velocity.normalized;
 				break;
 			case Attitude.Nplus:
 				heading = Vector3.Cross (this.vessel.obt_velocity, this.vessel.findWorldCenterOfMass () - this.vessel.mainBody.position).normalized;
@@ -65,12 +72,29 @@ namespace KspAutopilot
 			case Attitude.Nminus:
 				heading = -Vector3.Cross (this.vessel.obt_velocity, this.vessel.findWorldCenterOfMass () - this.vessel.mainBody.position).normalized;
 				break;
+			case Attitude.Up:
+				heading = (this.vessel.findWorldCenterOfMass () - this.vessel.mainBody.position).normalized;
+				break;
+			case Attitude.Down:
+				heading = -(this.vessel.findWorldCenterOfMass () - this.vessel.mainBody.position).normalized;
+				break;
+			case Attitude.UserDefined:
+				Vector3 position = this.vessel.findWorldCenterOfMass ();
+				Vector3 up = (position - this.vessel.mainBody.position).normalized;
+				Vector3 north = Vector3.Exclude (up, (vessel.mainBody.position + vessel.mainBody.transform.up * (float)vessel.mainBody.Radius) - position).normalized; // ???? oO .... MechJeb2 
+				Vector3 east = Vector3.Cross (up, north);
+
+				Quaternion qPitch = Quaternion.AngleAxis(this.pitch,up);
+				Quaternion qYaw = Quaternion.AngleAxis(-this.yaw,east);
+				heading = qPitch * qYaw * north;
+
+				break;
 			default:
 				heading = Vector3.zero;
 				break;
 			}
 
-			Vector3 error = this.vessel.transform.InverseTransformDirection (heading).normalized - this.vessel.transform.InverseTransformDirection (this.transform.up).normalized;
+			Vector3 error = this.vessel.transform.InverseTransformDirection (heading).normalized - Vector3.up;
 
 			Vector3 command = this.ComputePID (error);
 
@@ -81,6 +105,20 @@ namespace KspAutopilot
 		private void SetAttitude (Attitude attitude)
 		{
 			this.attitude = attitude;
+			this.ResetPID ();
+		}
+
+		private void SetPitch (float pitch)
+		{
+			this.pitch = pitch;
+			this.spitch = Convert.ToString (pitch);
+			this.ResetPID ();
+		}
+
+		private void SetYaw (float yaw)
+		{
+			this.yaw = yaw;
+			this.syaw = Convert.ToString (yaw);
 			this.ResetPID ();
 		}
 
@@ -131,8 +169,29 @@ namespace KspAutopilot
 			if (GUILayout.Toggle (this.attitude == Attitude.Nminus, "N-", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Nminus);
 			}
+			if (GUILayout.Toggle (this.attitude == Attitude.Up, "Up", GUILayout.ExpandWidth (true))) {
+				this.SetAttitude (Attitude.Up);
+			}
+			if (GUILayout.Toggle (this.attitude == Attitude.Down, "Down", GUILayout.ExpandWidth (true))) {
+				this.SetAttitude (Attitude.Down);
+			}
+			if (GUILayout.Toggle (this.attitude == Attitude.UserDefined, "User defined", GUILayout.ExpandWidth (true))) {
+				this.SetAttitude (Attitude.UserDefined);
+			}
 
 			float temp = 0;
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("Pitch", GUILayout.ExpandWidth (true));
+			this.spitch = GUILayout.TextField (this.spitch, GUILayout.ExpandWidth (true));
+			if (float.TryParse (this.spitch, out temp) && temp != this.pitch) this.SetPitch (temp);
+			GUILayout.EndHorizontal ();
+
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("Yaw", GUILayout.ExpandWidth (true));
+			this.syaw = GUILayout.TextField (this.syaw, GUILayout.ExpandWidth (true));
+			if (float.TryParse (this.syaw, out temp) && temp != this.yaw) this.SetYaw (temp);
+			GUILayout.EndHorizontal ();
+
 			GUILayout.BeginHorizontal ();
 			GUILayout.Label ("kp", GUILayout.ExpandWidth (true));
 			this.skp = GUILayout.TextField (this.skp, GUILayout.ExpandWidth (true));
