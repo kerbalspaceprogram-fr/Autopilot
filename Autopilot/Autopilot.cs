@@ -22,7 +22,7 @@ namespace KspAutopilot
 		private Vector3 pError, iError, dError; // erreur précédente, intégrale de l'erreur, dérivée de l'erreur
 		private Attitude attitude;
 		private Rect windowPosition;
-		private Boolean autopilot;
+		private Boolean autopilot, autolaunch;
 		private float pitch, yaw;
 		private string spitch, syaw;
 
@@ -37,6 +37,7 @@ namespace KspAutopilot
 			this.SetYaw (0);
 			this.SetAttitude (Attitude.None);
 			this.autopilot = false;
+			this.autolaunch = false;
 
 			if (this.windowPosition.x == 0 && this.windowPosition.y == 0)
 				this.windowPosition = new Rect (Screen.width / 2, Screen.height / 2, 10, 10);
@@ -54,6 +55,38 @@ namespace KspAutopilot
 		{
 			if (!this.autopilot)
 				return;
+
+
+			if (this.autolaunch) {
+				//Now we call this code regularly somewhere in the part logic:
+				//Staging.CurrentStage != Staging.StageCount is a way to detect whether liftoff has occurred yet.
+				//This condition is false until the first stage fires. The last stage is stage zero, so we should
+				//only try to fire the next stage if this is not the last stage.
+				/* !!!!!!! Ca vient du wiki et ça ne marche pas.... !!!!!!!
+				if (Staging.CurrentStage != Staging.StageCount && Staging.CurrentStage > 0)
+				{
+					if (!inverseStageDecouplesActiveEngine(Staging.CurrentStage - 1, vessel.rootPart))
+					{
+						Staging.ActivateNextStage();
+					}
+				}
+				*/
+				if (this.vessel.altitude < 10000) {
+					this.SetAttitude (Attitude.Up);
+					s.mainThrottle = 1.0f;
+				}
+				else if (this.vessel.orbit.ApA < 100000) {
+					if (this.pitch != 90) this.SetPitch (90);
+					if (this.yaw != 45) this.SetYaw (45);
+					if (this.attitude != Attitude.UserDefined) this.SetAttitude (Attitude.UserDefined);
+					s.mainThrottle = 1.0f;
+				} else {
+					this.SetAttitude(Attitude.None);
+					this.autolaunch = false;
+					this.autopilot = false;
+				}
+			}
+
 
 			Vector3 heading; 
 
@@ -80,14 +113,13 @@ namespace KspAutopilot
 				break;
 			case Attitude.UserDefined:
 				Vector3 position = this.vessel.findWorldCenterOfMass ();
-				Vector3 up = (position - this.vessel.mainBody.position).normalized;
-				Vector3 north = Vector3.Exclude (up, (vessel.mainBody.position + vessel.mainBody.transform.up * (float)vessel.mainBody.Radius) - position).normalized; // ???? oO .... MechJeb2 
-				Vector3 east = Vector3.Cross (up, north);
+				Vector3d east = vessel.mainBody.getRFrmVel (position).normalized;
+				Vector3d up = (position - vessel.mainBody.position).normalized;
+				Vector3d north = Vector3d.Cross (east, up);
 
-				Quaternion qPitch = Quaternion.AngleAxis(this.pitch,up);
-				Quaternion qYaw = Quaternion.AngleAxis(-this.yaw,east);
+				Quaternion qPitch = Quaternion.AngleAxis (this.pitch, up);
+				Quaternion qYaw = Quaternion.AngleAxis (-this.yaw, east);
 				heading = qPitch * qYaw * north;
-
 				break;
 			default:
 				heading = Vector3.zero;
@@ -175,19 +207,19 @@ namespace KspAutopilot
 			if (GUILayout.Toggle (this.attitude == Attitude.Down, "Down", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.Down);
 			}
-			if (GUILayout.Toggle (this.attitude == Attitude.UserDefined, "User defined", GUILayout.ExpandWidth (true))) {
+			if (GUILayout.Toggle (this.attitude == Attitude.UserDefined, "User defined (*)", GUILayout.ExpandWidth (true))) {
 				this.SetAttitude (Attitude.UserDefined);
 			}
 
 			float temp = 0;
 			GUILayout.BeginHorizontal ();
-			GUILayout.Label ("Pitch", GUILayout.ExpandWidth (true));
+			GUILayout.Label ("* Pitch", GUILayout.ExpandWidth (true));
 			this.spitch = GUILayout.TextField (this.spitch, GUILayout.ExpandWidth (true));
 			if (float.TryParse (this.spitch, out temp) && temp != this.pitch) this.SetPitch (temp);
 			GUILayout.EndHorizontal ();
 
 			GUILayout.BeginHorizontal ();
-			GUILayout.Label ("Yaw", GUILayout.ExpandWidth (true));
+			GUILayout.Label ("* Yaw", GUILayout.ExpandWidth (true));
 			this.syaw = GUILayout.TextField (this.syaw, GUILayout.ExpandWidth (true));
 			if (float.TryParse (this.syaw, out temp) && temp != this.yaw) this.SetYaw (temp);
 			GUILayout.EndHorizontal ();
@@ -215,11 +247,46 @@ namespace KspAutopilot
 			this.autopilot = GUILayout.Toggle (this.autopilot, this.autopilot ? "Enabled" : "Disabled", GUILayout.ExpandWidth (true));
 			GUILayout.EndHorizontal ();
 
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("Launch (auto staging & gravity turn)", GUILayout.ExpandWidth (true));
+			this.autolaunch = GUILayout.Toggle (this.autolaunch, this.autolaunch ? "Enabled" : "Disabled", GUILayout.ExpandWidth (true));
+			GUILayout.EndHorizontal ();
+
 			if (GUILayout.Button ("Close", GUILayout.ExpandWidth (true))) RenderingManager.RemoveFromPostDrawQueue (3, new Callback (DrawGUI));
 
 			GUILayout.EndVertical ();
 
 			GUI.DragWindow (new Rect (0, 0, 10000, 20));
+		}
+
+		//Determines whether any of the parts under this part in the ship are engines in the ACTIVE or IDLE
+		//state. Engines are IDLE before they are fired, ACTIVE while firing, and DEACTIVATED after running
+		//out of fuel. So if a decoupler has an ACTIVE or IDLE engine descendant we shouldn't blow the decoupler, or
+		//we will shed burning or unused engines.
+		private bool hasActiveEngineDescendant(Part p)
+		{
+			//note that if someone makes a new engine that does not subclass LiquidEngine or SolidRocket
+			//then this method will not account for it
+			if ((p.State == PartStates.ACTIVE || p.State == PartStates.IDLE) && (p is SolidRocket || p is LiquidEngine)) return true;
+			foreach (Part child in p.children)
+			{
+				if (hasActiveEngineDescendant(child)) return true;
+			}
+			return false;
+		}
+
+		//Parts store an "inverseStage" which is just the stage number that appears in the staging display
+		//in the GUI, and which counts is counts downward to zero as you activate successive stages. This
+		//method looks to see if any of the parts in the given inverseStage are decouplers that would
+		//decouple an active or idle engine if we activated the given inverseStage.
+		private bool inverseStageDecouplesActiveEngine(int inverseStage, Part root)
+		{
+			if (root.inverseStage == inverseStage && (root is Decoupler || root is RadialDecoupler) && hasActiveEngineDescendant(root)) return true;
+			foreach (Part child in root.children)
+			{
+				if (inverseStageDecouplesActiveEngine(inverseStage, child)) return true;
+			}
+			return false;
 		}
 
 		private Vector3d ComputePID (Vector3 error)
